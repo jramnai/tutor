@@ -161,12 +161,17 @@ def k8s() -> None:
 @click.option("-I", "--non-interactive", is_flag=True, help="Run non-interactively")
 @click.pass_context
 def quickstart(context: click.Context, non_interactive: bool) -> None:
+    if tutor_env.needs_major_upgrade(context.obj.root):
+        click.echo(fmt.title("Upgrading from an older release"))
+        context.invoke(
+            upgrade,
+            from_version=tutor_env.current_release(context.obj.root),
+        )
+
     click.echo(fmt.title("Interactive platform configuration"))
     context.invoke(
         config_save_command,
         interactive=(not non_interactive),
-        set_vars=[],
-        unset_vars=[],
     )
     config = tutor_config.load(context.obj.root)
     if not config["ENABLE_WEB_PROXY"]:
@@ -179,8 +184,6 @@ def quickstart(context: click.Context, non_interactive: bool) -> None:
             " traffic to the caddy service. See the Kubernetes section in the Tutor documentation for more"
             " information."
         )
-    click.echo(fmt.title("Updating the current environment"))
-    tutor_env.save(context.obj.root, config)
     click.echo(fmt.title("Starting the platform"))
     context.invoke(start)
     click.echo(fmt.title("Database creation and migrations"))
@@ -268,25 +271,29 @@ def start(context: Context, names: List[str]) -> None:
 def stop(context: Context, names: List[str]) -> None:
     config = tutor_config.load(context.root)
     names = names or ["all"]
-    resource_types = "deployments,services,configmaps,jobs"
-    not_lb_selector = "app.kubernetes.io/component!=loadbalancer"
     for name in names:
         if name == "all":
-            utils.kubectl(
-                "delete",
-                *resource_selector(config, not_lb_selector),
-                resource_types,
-            )
+            delete_resources(config)
         else:
-            utils.kubectl(
-                "delete",
-                *resource_selector(
-                    config,
-                    not_lb_selector,
-                    "app.kubernetes.io/name={}".format(name),
-                ),
-                resource_types,
-            )
+            delete_resources(config, name=name)
+
+
+def delete_resources(
+    config: Config, resources: Optional[List[str]] = None, name: Optional[str] = None
+) -> None:
+    """
+    Delete resources by type and name.
+
+    The load balancer is never deleted.
+    """
+    resources = resources or ["deployments", "services", "configmaps", "jobs"]
+    not_lb_selector = "app.kubernetes.io/component!=loadbalancer"
+    name_selector = [f"app.kubernetes.io/name={name}"] if name else []
+    utils.kubectl(
+        "delete",
+        *resource_selector(config, not_lb_selector, *name_selector),
+        ",".join(resources),
+    )
 
 
 @click.command(help="Reboot an existing platform")
@@ -442,7 +449,7 @@ def wait(context: Context, name: str) -> None:
 @click.option(
     "--from",
     "from_version",
-    default="koa",
+    default="lilac",
     type=click.Choice(["ironwood", "juniper", "koa", "lilac"]),
 )
 @click.pass_obj
@@ -463,7 +470,7 @@ def upgrade(context: Context, from_version: str) -> None:
         running_version = "lilac"
 
     if running_version == "lilac":
-        # Nothing to do here
+        upgrade_from_lilac(config)
         running_version = "maple"
 
 
@@ -532,6 +539,14 @@ your MongoDb cluster from v3.6 to v4.0. You should run something similar to:
     tutor config save --unset DOCKER_IMAGE_MONGODB
     """
     fmt.echo_info(message)
+
+
+def upgrade_from_lilac(config: Config) -> None:
+    fmt.echo_info(
+        "All Kubernetes services and deployments need to be deleted during "
+        "upgrade from Lilac to Maple"
+    )
+    delete_resources(config, resources=["deployments", "services"])
 
 
 def kubectl_exec(

@@ -4,13 +4,17 @@ Note: Breaking changes between versions are indicated by "💥".
 
 ## Unreleased
 
+- [Bugfix] Ensure that ``tutor k8s upgrade`` is run during ``tutor k8s quickstart``, when necessary.
+- [Bugfix] By default, upgrade from Lilac and not Koa during ``tutor k8s upgrade``.
+- [Bugfix] Fix upgrading from Lilac to Maple on Kubernetes by deleting deployments and services.
+
 ## v13.0.2
 
 - [Security] Prevent non-staff users from searching usernames by email.
 
 ## v13.0.1
 
-- [Fix] Missing requirements file in `pip install tutor[full]`.
+- [Bugfix] Missing requirements file in `pip install tutor[full]`.
 
 ## v13.0.0
 
